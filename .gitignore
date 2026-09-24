@@ -1,0 +1,67 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode and SwiftPM
+build/
+DerivedData/
+.build/
+.swiftpm/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+
+# Release outputs from Tools/package.sh
+dist/
+*.dmg
+*.zip
+
+# Signing: your Apple Team ID (see Config/Signing.xcconfig)
+*.local.xcconfig
+
+# Certificates, keys and provisioning profiles
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.p8
+*.mobileprovision
+*.provisionprofile
+*.keychain
+*.keychain-db
+ExportOptions.plist
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.secret
+secrets/
+
+# Dependencies and caches the test projects create when run
+node_modules/
+.pnpm-store/
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+target/
+vendor/
+.gradle/
+.bundle/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Claude Code
+.claude/
+CLAUDE.md
