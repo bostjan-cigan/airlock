@@ -1,0 +1,45 @@
+#!/bin/sh
+# Root side of airlock-install, one connection per request (socat EXEC). Reads one line of
+# package names and installs them from the image's Debian repositories.
+set -u
+# Root never looks up commands in the image PATH: it starts with the agent's (writable) mise shims.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+done_() { echo "airlock-install: exit $1"; exit "$1"; }
+read -r names || done_ 2
+count=0
+for name in $names; do
+    count=$((count + 1))
+    case "$name" in
+        [a-z0-9]*) ;;
+        *) echo "airlock-install: “$name” isn't a Debian package name."; done_ 2 ;;
+    esac
+    case "$name" in
+        *[!a-z0-9+.-]*) echo "airlock-install: “$name” isn't a Debian package name."; done_ 2 ;;
+    esac
+    # Tools that hand out root would undo the sandbox.
+    case "$name" in
+        sudo|sudo-ldap|doas|opendoas|gosu|su-exec|policykit-1|pkexec|polkitd|super|really|calife)
+            echo "airlock-install: $name isn't allowed in a task."; done_ 2 ;;
+    esac
+done
+[ "$count" -gt 0 ] && [ "$count" -le 40 ] || { echo "airlock-install: give between 1 and 40 packages."; done_ 2; }
+
+exec 9>/run/airlock/apt.lock
+flock 9
+export DEBIAN_FRONTEND=noninteractive
+if [ ! -f /run/airlock/apt-updated ]; then
+    apt-get update -qq || done_ $?
+    touch /run/airlock/apt-updated
+fi
+stamp=/run/airlock/install-stamp
+touch "$stamp"
+# shellcheck disable=SC2086
+apt-get install -y --no-install-recommends $names
+status=$?
+# Nothing installed this way may run with raised privileges.
+find / -xdev \( -perm -4000 -o -perm -2000 \) -newer "$stamp" -type f -exec chmod ug-s {} + 2>/dev/null
+if [ "$status" -eq 0 ]; then
+    for name in $names; do echo "$name" >> /run/airlock/installed-packages; done
+fi
+done_ "$status"

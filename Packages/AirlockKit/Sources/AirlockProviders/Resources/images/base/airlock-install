@@ -1,0 +1,12 @@
+#!/bin/sh
+# Installs Debian packages for the agent, which has no root and no sudo. The root side
+# (airlock-install-handler) only accepts package names: no files, paths or scripts.
+if [ $# -eq 0 ]; then
+    echo "usage: airlock-install <debian-package>…   e.g. airlock-install libpq-dev ffmpeg" >&2
+    exit 2
+fi
+out=$(mktemp)
+printf '%s\n' "$*" | socat -t 900 - UNIX-CONNECT:/run/airlock/install.sock | tee "$out"
+status=$(sed -n 's/^airlock-install: exit \([0-9]*\)$/\1/p' "$out" | tail -1)
+rm -f "$out"
+exit "${status:-1}"
