@@ -1,0 +1,14 @@
+{
+  "name": "airlock",
+  "description": "AIrlock: hand off coding tasks from Claude to isolated containers on your Mac.",
+  "owner": {
+    "name": "Boštjan Cigan"
+  },
+  "plugins": [
+    {
+      "name": "airlock",
+      "source": "./Plugin/airlock",
+      "description": "Hand off coding tasks from Claude to isolated AIrlock containers and follow them from the chat."
+    }
+  ]
+}

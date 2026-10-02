@@ -1,0 +1,11 @@
+{
+  "name": "airlock",
+  "version": "0.1.0",
+  "description": "Hand off coding tasks to isolated AIrlock containers (Docker or Apple VMs) and follow them from the chat.",
+  "author": { "name": "Boštjan Cigan" },
+  "mcpServers": {
+    "airlock": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/airlock-mcp"
+    }
+  }
+}
