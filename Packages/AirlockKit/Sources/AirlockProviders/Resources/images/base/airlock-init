@@ -1,0 +1,61 @@
+#!/bin/sh
+# Container main process. Runs as root only long enough to apply the network
+# policy, then drops every capability and becomes `node`.
+set -eu
+# Root never looks up commands in the image PATH: it starts with the agent's (writable) mise shims.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+# AIrlock waits for this marker before starting the agent, so nothing ever runs
+# before the network policy is in place. Clear any marker from a previous boot.
+READY=/run/airlock-ready
+rm -f "$READY"
+
+# Restricted tasks resolve names through a local dnsmasq that airlock-firewall configures:
+# it answers only allowlisted domains (so nothing leaves through DNS), adds their addresses
+# to the firewall as they're resolved, and logs refusals so AIrlock can report blocked
+# hosts. This only records the real resolvers; airlock-firewall starts dnsmasq.
+prepare_dns() {
+    command -v dnsmasq >/dev/null || return 1
+    saved=/var/lib/airlock/resolv.conf
+    mkdir -p /var/lib/airlock
+    # After a restart resolv.conf may still point at our own resolver; use the saved one then.
+    if grep -qE '^nameserver 127\.0\.0\.1$' /etc/resolv.conf && [ -f "$saved" ]; then :; else cp /etc/resolv.conf "$saved"; fi
+    upstream=$(awk '/^nameserver/ && $2 != "127.0.0.1" {print $2}' "$saved")
+    [ -n "$upstream" ] || return 1
+    : > /run/airlock/dns.log
+    chmod 600 /run/airlock/dns.log
+    printf '%s\n' $upstream > /run/airlock/upstream-dns
+}
+
+# Live allowlist changes land in /run/airlock/network.json; at boot the mounted file is current.
+rm -rf /run/airlock
+mkdir -m 0755 /run/airlock
+
+# airlock-install: the agent asks for Debian packages by name; root installs them.
+# -t: keep the connection open while apt works after the request has been read.
+socat -t 900 UNIX-LISTEN:/run/airlock/install.sock,fork,mode=666,unlink-early EXEC:/usr/local/bin/airlock-install-handler,stderr &
+
+if [ "${AIRLOCK_NETWORK:-open}" = "restricted" ]; then
+    prepare_dns || echo "airlock-init: no local resolver; DNS isn't filtered and blocked hosts won't be reported" >&2
+    if ! /usr/local/bin/airlock-firewall; then
+        echo "airlock-init: firewall setup failed; refusing to start" >&2
+        exit 1
+    fi
+    # Re-resolve allowlisted domains periodically (CDN addresses rotate).
+    ( while sleep 300; do /usr/local/bin/airlock-firewall >/dev/null 2>&1 || true; done ) &
+fi
+
+# The credential proxy, as its own user with no capabilities. Its token arrives later, in a
+# folder only it can read; until then it refuses every request.
+rm -rf /run/airlock-proxy
+mkdir -m 0700 /run/airlock-proxy
+chown airlock-proxy:airlock-proxy /run/airlock-proxy
+setpriv --reuid=airlock-proxy --regid=airlock-proxy --init-groups --inh-caps=-all --bounding-set=-all --no-new-privs \
+    /opt/airlock-node/bin/node /usr/local/bin/airlock-proxy &
+
+touch "$READY"
+
+exec setpriv --reuid=node --regid=node --init-groups \
+    --inh-caps=-all --bounding-set=-all \
+    sleep infinity

@@ -1,0 +1,9 @@
+#!/bin/sh
+# Agent hook: appends the event to /airlock/events/events.jsonl for the AIrlock
+# app to read. Never blocks or fails the agent.
+dir=/airlock/events
+[ -d "$dir" ] && [ -w "$dir" ] || exit 0
+line=$(jq -c --arg ev "${1:-unknown}" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" \
+    '{ts: $ts, event: $ev, payload: .}' 2>/dev/null) || exit 0
+( flock 9; printf '%s\n' "$line" >&9 ) 9>>"$dir/events.jsonl"
+exit 0

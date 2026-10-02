@@ -1,0 +1,4 @@
+PROMPT='%F{cyan}airlock%f %F{8}%~%f %# '
+HISTFILE=/home/node/.claude/.zsh_history
+HISTSIZE=10000
+SAVEHIST=10000

@@ -1,0 +1,191 @@
+#!/bin/sh
+# Default-deny egress with a domain allowlist, using nftables.
+#
+# Reads /run/airlock/network.json (live changes from AIrlock) or else the mounted
+# /airlock/network.json: {"domains": ["api.anthropic.com", "10.0.0.0/24", ...], "github": true}
+# Rebuilds the whole `inet airlock` table atomically, so it is safe to re-run.
+# Prints "airlock-firewall: no addresses for <entry>" for entries that resolve to nothing.
+set -eu
+# Root never looks up commands in the image PATH: it starts with the agent's (writable) mise shims.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+CONF=/airlock/network.json
+[ -f /run/airlock/network.json ] && CONF=/run/airlock/network.json
+[ -f "$CONF" ] || { echo "airlock-firewall: $CONF missing" >&2; exit 1; }
+
+v4=$(mktemp)
+v6=$(mktemp)
+rules=$(mktemp)
+trap 'rm -f "$v4" "$v6" "$rules"' EXIT
+add4() { echo "$1" >> "$v4"; }
+add6() { echo "$1" >> "$v6"; }
+
+
+resolve() {
+    found=0
+    for ip in $(dig +short +time=3 +tries=2 A "$1" | grep -E '^[0-9]+(\.[0-9]+){3}$' || true); do add4 "$ip"; found=1; done
+    for ip in $(dig +short +time=3 +tries=2 AAAA "$1" | grep -E '^[0-9a-fA-F:]+:[0-9a-fA-F:]*$' || true); do add6 "$ip"; found=1; done
+    [ "$found" = 1 ]
+}
+
+# An entry is a hostname, or an IPv4/IPv6 address or CIDR that's allowed as is.
+allow_entry() {
+    case "$1" in
+        *:*) add6 "$1" ;;
+        \*.*) ;; # a wildcard: its names are added as they're resolved
+        *[!0-9./]*) resolve "$1" || echo "airlock-firewall: no addresses for $1" ;;
+        *) add4 "$1" ;;
+    esac
+}
+
+if [ "$(jq -r '.github // false' "$CONF")" = "true" ]; then
+    # GitHub publishes its address ranges. The endpoint is rate limited, so keep
+    # the last good copy and also resolve the main hostnames directly.
+    cache=/var/cache/airlock-github-meta.json
+    if curl -fsS --max-time 10 https://api.github.com/meta -o "$cache.new" 2>/dev/null && jq -e '.web' "$cache.new" >/dev/null 2>&1; then
+        mv "$cache.new" "$cache"
+    else
+        rm -f "$cache.new"
+    fi
+    if [ -f "$cache" ]; then
+        for cidr in $(jq -r '(.web + .api + .git)[]' "$cache" | sort -u); do
+            case "$cidr" in *:*) add6 "$cidr" ;; *) add4 "$cidr" ;; esac
+        done
+    fi
+    for domain in github.com api.github.com codeload.github.com objects.githubusercontent.com \
+                  raw.githubusercontent.com uploads.github.com ghcr.io pkg-containers.githubusercontent.com; do
+        resolve "$domain" || true
+    done
+fi
+
+# Hosts only the credential proxy's user may reach (the agent's API). Everyone else is refused.
+proxy_domains=$(jq -r '(.proxyDomains // [])[]' "$CONF" | grep -v '[:/]' | grep '[a-z]' || true)
+proxy_uid=$(id -u airlock-proxy 2>/dev/null || true)
+[ -n "$proxy_uid" ] || proxy_domains=""
+
+# The local resolver answers only allowlisted domains (and their subdomains), forwards them
+# to the real resolvers, and adds their addresses to the sets below as they're resolved.
+# Every other name gets NXDOMAIN, so nothing leaves the container through DNS.
+dns_policy() {
+    conf=$(mktemp)
+    domains=$(jq -r '.domains[]' "$CONF" | grep -v '[:/]' | grep '[a-z]' || true)
+    if [ "$(jq -r '.github // false' "$CONF")" = "true" ]; then
+        domains="$domains github.com githubusercontent.com ghcr.io"
+    fi
+    {
+        for domain in $domains; do
+            domain=${domain#\*.}
+            for ns in $(cat /run/airlock/upstream-dns); do echo "server=/$domain/$ns"; done
+            echo "nftset=/$domain/4#inet#airlock#allowed4,6#inet#airlock#allowed6"
+        done
+        for domain in $proxy_domains; do
+            for ns in $(cat /run/airlock/upstream-dns); do echo "server=/$domain/$ns"; done
+            echo "nftset=/$domain/4#inet#airlock#proxy4,6#inet#airlock#proxy6"
+        done
+    } > "$conf"
+    echo "address=/#/" >> "$conf"
+    if ! cmp -s "$conf" /run/airlock/dnsmasq.conf || ! kill -0 "$(cat /run/airlock/dnsmasq.pid 2>/dev/null)" 2>/dev/null; then
+        mv "$conf" /run/airlock/dnsmasq.conf
+        [ -f /run/airlock/dnsmasq.pid ] && kill "$(cat /run/airlock/dnsmasq.pid)" 2>/dev/null && sleep 0.2
+        dnsmasq --conf-file=/run/airlock/dnsmasq.conf --listen-address=127.0.0.1 --bind-interfaces \
+            --no-resolv --no-hosts --user=root --pid-file=/run/airlock/dnsmasq.pid --cache-size=1000 \
+            --log-queries=extra --log-facility=/run/airlock/dns.log || return 1
+    else
+        rm -f "$conf"
+    fi
+    if ! grep -qE '^nameserver 127\.0\.0\.1$' /etc/resolv.conf; then
+        { echo "nameserver 127.0.0.1"; grep -E '^(search|options)' /var/lib/airlock/resolv.conf || true; } > /etc/resolv.conf
+    fi
+}
+if [ -f /run/airlock/upstream-dns ] && ! dns_policy; then
+    echo "airlock-firewall: local resolver failed to start; DNS isn't filtered" >&2
+    rm -f /run/airlock/upstream-dns
+    cp /var/lib/airlock/resolv.conf /etc/resolv.conf 2>/dev/null || true
+fi
+
+# With the local resolver, lookups go to loopback, and only root (that resolver) may reach
+# the upstream servers. Otherwise anyone may use the configured ones.
+if [ -f /run/airlock/upstream-dns ]; then
+    dns4=$(grep -v : /run/airlock/upstream-dns | paste -sd, -)
+    dns6=$(grep : /run/airlock/upstream-dns | paste -sd, -)
+    dnsuser="meta skuid 0 "
+else
+    dns4=$(awk '/^nameserver/ && $2 !~ /:/ {print $2}' /etc/resolv.conf | paste -sd, -)
+    dns6=$(awk '/^nameserver/ && $2 ~ /:/ {print $2}' /etc/resolv.conf | paste -sd, -)
+    dnsuser=""
+fi
+
+for entry in $(jq -r '.domains[]' "$CONF"); do
+    allow_entry "$entry"
+done
+p4=$(mktemp)
+p6=$(mktemp)
+trap 'rm -f "$v4" "$v6" "$rules" "$p4" "$p6"' EXIT
+for domain in $proxy_domains; do
+    for ip in $(dig +short +time=3 +tries=2 A "$domain" | grep -E '^[0-9]+(\.[0-9]+){3}$' || true); do echo "$ip" >> "$p4"; done
+    for ip in $(dig +short +time=3 +tries=2 AAAA "$domain" | grep -E '^[0-9a-fA-F:]+:[0-9a-fA-F:]*$' || true); do echo "$ip" >> "$p6"; done
+done
+
+# "elements = { a, b };" or nothing when the set is empty.
+elements() {
+    list=$(sort -u "$1" | paste -sd, - | sed 's/,/, /g')
+    [ -n "$list" ] && printf 'elements = { %s };' "$list"
+    return 0
+}
+e4=$(elements "$v4")
+e6=$(elements "$v6")
+pe4=$(elements "$p4")
+pe6=$(elements "$p6")
+
+{
+    echo "table inet airlock"
+    echo "delete table inet airlock"
+    echo "table inet airlock {"
+    echo "  set allowed4 { type ipv4_addr; flags interval; auto-merge; $e4 }"
+    echo "  set allowed6 { type ipv6_addr; flags interval; auto-merge; $e6 }"
+    echo "  set proxy4 { type ipv4_addr; flags interval; auto-merge; $pe4 }"
+    echo "  set proxy6 { type ipv6_addr; flags interval; auto-merge; $pe6 }"
+    echo "  chain output {"
+    echo "    type filter hook output priority 0; policy drop;"
+    echo "    oif lo accept"
+    echo "    ct state established,related accept"
+    [ -n "$dns4" ] && echo "    ${dnsuser}ip daddr { $dns4 } meta l4proto { udp, tcp } th dport 53 accept"
+    [ -n "$dns6" ] && echo "    ${dnsuser}ip6 daddr { $dns6 } meta l4proto { udp, tcp } th dport 53 accept"
+    echo "    ip daddr @allowed4 accept"
+    echo "    ip6 daddr @allowed6 accept"
+    if [ -n "$proxy_uid" ]; then
+        echo "    meta skuid $proxy_uid ip daddr @proxy4 tcp dport 443 accept"
+        echo "    meta skuid $proxy_uid ip6 daddr @proxy6 tcp dport 443 accept"
+    fi
+    echo "    reject with icmpx type admin-prohibited"
+    echo "  }"
+    echo "  chain forward { type filter hook forward priority 0; policy drop; }"
+    echo "}"
+} > "$rules"
+
+nft -f "$rules"
+
+# Every new outgoing connection (except the proxy's and the resolver's) is recorded here, in a
+# table of its own so re-applying the allowlist keeps it. An inspection reports what its code
+# tried to reach; flushing the sets starts a new record.
+if ! nft list table inet airlock_audit >/dev/null 2>&1; then
+    audit=$(mktemp)
+    {
+        echo "table inet airlock_audit {"
+        echo "  set tried4 { type ipv4_addr . inet_service; size 4096; flags dynamic; }"
+        echo "  set tried6 { type ipv6_addr . inet_service; size 4096; flags dynamic; }"
+        echo "  chain output {"
+        echo "    type filter hook output priority -10; policy accept;"
+        echo "    oif lo accept"
+        echo "    meta skuid 0 accept"
+        [ -n "$proxy_uid" ] && echo "    meta skuid $proxy_uid accept"
+        echo "    ct state new meta l4proto { tcp, udp } meta nfproto ipv4 add @tried4 { ip daddr . th dport }"
+        echo "    ct state new meta l4proto { tcp, udp } meta nfproto ipv6 add @tried6 { ip6 daddr . th dport }"
+        echo "  }"
+        echo "}"
+    } > "$audit"
+    nft -f "$audit" || echo "airlock-firewall: connection record unavailable" >&2
+    rm -f "$audit"
+fi
+echo "airlock-firewall: allowlist applied"
