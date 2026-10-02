@@ -1,0 +1,20 @@
+{
+  "name": "sample-node-pnpm",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Notes API backed by Postgres and Redis. AIrlock test project: Node 20 with pnpm, pinned in mise.toml.",
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": "20.x"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node scripts/check.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "pg": "^8.13.0",
+    "redis": "^4.7.0"
+  }
+}

@@ -1,0 +1,40 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    connection_pool (3.0.2)
+    minitest (5.27.0)
+    pg (1.7.0)
+    pg (1.7.0-aarch64-linux)
+    pg (1.7.0-aarch64-linux-musl)
+    pg (1.7.0-arm64-darwin)
+    pg (1.7.0-x86_64-darwin)
+    pg (1.7.0-x86_64-linux)
+    pg (1.7.0-x86_64-linux-musl)
+    rake (13.4.2)
+    redis (5.4.1)
+      redis-client (>= 0.22.0)
+    redis-client (0.30.1)
+      connection_pool
+    webrick (1.9.2)
+
+PLATFORMS
+  aarch64-linux
+  aarch64-linux-musl
+  arm64-darwin
+  ruby
+  x86_64-darwin
+  x86_64-linux
+  x86_64-linux-musl
+
+DEPENDENCIES
+  minitest (~> 5.25)
+  pg (~> 1.5)
+  rake (~> 13.2)
+  redis (~> 5.3)
+  webrick (~> 1.9)
+
+RUBY VERSION
+   ruby 3.3.12p206
+
+BUNDLED WITH
+   2.5.22

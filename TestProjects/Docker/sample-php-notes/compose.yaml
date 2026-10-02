@@ -1,0 +1,54 @@
+# Two databases for the PHP notes API.
+#
+# Under AIrlock: postgres and redis start next to the agent container and share
+# its network, so the agent reaches them as postgres:5432 and redis:6379.
+# `app` has a build section, so AIrlock skips it (the agent runs the code itself).
+#
+# Without AIrlock: `docker compose up` runs everything, API on localhost:3000.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  app:
+    build: .
+    environment:
+      DATABASE_DSN: pgsql:host=postgres;port=5432;dbname=app;user=app;password=app
+      REDIS_URL: tcp://redis:6379
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:

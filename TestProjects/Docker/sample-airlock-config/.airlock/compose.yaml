@@ -1,0 +1,9 @@
+# AIrlock settings for this project. Nothing here is needed for most projects: AIrlock
+# detects tools from version files. This one has none, and needs ffmpeg, which no
+# version file can say.
+x-airlock:
+  tools:
+    python: "3.13"
+  packages: [ffmpeg]
+  allow: []
+  resources: { cpus: 2, memory: 6g }

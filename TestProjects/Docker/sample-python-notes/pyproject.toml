@@ -1,0 +1,12 @@
+[project]
+name = "notes"
+version = "1.0.0"
+description = "Notes API backed by Postgres and Redis. AIrlock test project: Python."
+requires-python = "~=3.12"
+dependencies = ["psycopg[binary]>=3.2", "redis>=5.2"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.3"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

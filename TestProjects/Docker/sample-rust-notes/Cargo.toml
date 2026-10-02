@@ -1,0 +1,12 @@
+[package]
+name = "notes"
+version = "1.0.0"
+edition = "2021"
+description = "Notes API backed by Postgres and Redis. AIrlock test project: Rust."
+
+[dependencies]
+postgres = "0.19"
+redis = "0.27"
+tiny_http = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

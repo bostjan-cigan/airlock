@@ -1,0 +1,48 @@
+# The notes monorepo: Postgres and Redis, plus three services built from the repo.
+#
+# Under AIrlock: postgres and redis start next to the agent container and share its
+# network. api, web and indexer have build sections, so AIrlock skips them (the agent
+# runs the code itself).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: services/api
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  web:
+    build: web
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on: [api]
+
+  indexer:
+    build: workers/indexer
+
+volumes:
+  pgdata:
