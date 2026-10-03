@@ -1,0 +1,48 @@
+#!/opt/airlock-node/bin/node
+// Holds the agent's API credential so the agent never does. Runs as its own user
+// (airlock-proxy), which the agent and anything it runs can't read, signal or trace.
+//
+// The agent talks to http://127.0.0.1:$AIRLOCK_PROXY_PORT with a placeholder credential;
+// this replaces it with the real one (read from a file only this user can read) and
+// forwards the request to the API over TLS. Only the API paths the agent needs pass.
+// On a restricted network, only this user may reach the API at all.
+'use strict';
+const http = require('http');
+const https = require('https');
+const fs = require('fs');
+
+const PORT = Number(process.env.AIRLOCK_PROXY_PORT || 8119);
+const UPSTREAM = process.env.AIRLOCK_PROXY_UPSTREAM || 'api.anthropic.com';
+const DIR = '/run/airlock-proxy';
+const TOKEN = DIR + '/token';
+const LOG = DIR + '/requests.log';
+const ALLOWED = [/^\/v1\/messages(\/count_tokens)?(\?.*)?$/, /^\/v1\/models(\/[^/?]*)?(\?.*)?$/, /^\/api\/hello$/];
+const DROP = ['authorization', 'x-api-key', 'proxy-authorization', 'host', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade'];
+
+function log(method, path, status) {
+  const line = `${new Date().toISOString()} ${method} ${path.split('?')[0]} ${status}\n`;
+  try { fs.appendFileSync(LOG, line); } catch (_) {}
+}
+
+function credential() {
+  const value = fs.readFileSync(TOKEN, 'utf8').trim();
+  if (!value) throw new Error('empty');
+  return value.startsWith('sk-ant-oat') ? { authorization: 'Bearer ' + value } : { 'x-api-key': value };
+}
+
+http.createServer((req, res) => {
+  const fail = (status) => { log(req.method, req.url, status); res.writeHead(status, { 'content-type': 'application/json' }); res.end('{"type":"error","error":{"type":"airlock_proxy","message":"refused by the AIrlock proxy"}}'); };
+  if (!ALLOWED.some((re) => re.test(req.url))) return fail(403);
+  let auth;
+  try { auth = credential(); } catch (_) { return fail(503); }
+  const headers = {};
+  for (const [name, value] of Object.entries(req.headers)) if (!DROP.includes(name)) headers[name] = value;
+  Object.assign(headers, auth, { host: UPSTREAM });
+  const upstream = https.request({ host: UPSTREAM, port: 443, method: req.method, path: req.url, headers }, (reply) => {
+    log(req.method, req.url, reply.statusCode);
+    res.writeHead(reply.statusCode, reply.headers);
+    reply.pipe(res);
+  });
+  upstream.on('error', () => { if (!res.headersSent) fail(502); else res.destroy(); });
+  req.pipe(upstream);
+}).listen(PORT, '127.0.0.1');
