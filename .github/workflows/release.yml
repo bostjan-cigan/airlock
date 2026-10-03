@@ -1,0 +1,83 @@
+# Publishes a release with a downloadable Mac app (.dmg and .zip). Two ways to start one:
+#
+#   - On GitHub: Actions › Release › Run workflow, and pick patch, minor or major. The next version
+#     comes from the latest v* tag (v1.2.3 → v1.2.4 / v1.3.0 / v2.0.0), and the tag is created here.
+#   - From a terminal: git tag v1.2.0 && git push origin v1.2.0
+#
+# The version the app reports comes from the tag; the build number is this workflow's run number.
+# Builds are signed ad hoc (no Apple Developer account), so on first launch macOS asks to confirm
+# opening an app from an unidentified developer.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part of the version to raise'
+        type: choice
+        options: [patch, minor, major]
+        default: minor
+
+permissions:
+  contents: write
+
+# One release at a time, so two runs can't pick the same next version.
+concurrency: release
+
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all tags, to find the latest version
+
+      - name: Version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            LATEST=$(git tag --list 'v*' --sort=-v:refname | grep -E '^v[0-9]+(\.[0-9]+){1,2}$' | head -1)
+            IFS=. read -r MAJOR MINOR PATCH <<< "${LATEST:-v0.0.0}"
+            MAJOR=${MAJOR#v}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
+            case "$BUMP" in
+              major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+              minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+              patch) PATCH=$((PATCH + 1)) ;;
+            esac
+            VERSION="$MAJOR.$MINOR.$PATCH"
+            echo "Latest release ${LATEST:-none}, $BUMP → v$VERSION"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+            if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
+              echo "::error::Tag $GITHUB_REF_NAME isn't a version like v1.2 or v1.2.3"
+              exit 1
+            fi
+          fi
+          echo "AIRLOCK_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "AIRLOCK_BUILD=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=v$VERSION" >> "$GITHUB_ENV"
+
+      - name: Test
+        working-directory: Packages/AirlockKit
+        run: swift test
+
+      - name: Build
+        run: Tools/package.sh
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            # The tag was moved and pushed again (git push -f origin vX.Y.Z): replace the files.
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+          else
+            # From the button, this also creates the tag on the commit that was built.
+            gh release create "$RELEASE_TAG" dist/* \
+              --title "AIrlock $AIRLOCK_VERSION" \
+              --target "$GITHUB_SHA" \
+              --generate-notes
+          fi

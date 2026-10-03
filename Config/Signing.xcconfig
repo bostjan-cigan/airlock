@@ -1,0 +1,10 @@
+// Code signing for Xcode builds. Your Apple Team ID stays out of the repository:
+// put it in Config/Signing.local.xcconfig (ignored by git), e.g.
+//
+//     DEVELOPMENT_TEAM = ABCDE12345
+//
+// Without it, pick a team in Signing & Capabilities, or build with `ADHOC=1 Tools/build.sh`,
+// which needs no Apple account.
+DEVELOPMENT_TEAM =
+
+#include? "Signing.local.xcconfig"
