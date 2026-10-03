@@ -1,0 +1,15 @@
+{
+  "name": "sample-node-malicious",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DECOY fixture: trips AIrlock supply-chain detectors. Inert on a real machine. Inspect only in AIrlock.",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "preinstall": "node scripts/preinstall.js",
+    "postinstall": "node scripts/postinstall.js",
+    "start": "node src/index.js"
+  }
+}
