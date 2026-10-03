@@ -1,0 +1,194 @@
+#!/bin/sh
+# Inspecting an untrusted repository, one step at a time. AIrlock runs each step and closes
+# the network between `download` (nothing from the repository runs) and `run` (it does).
+#
+#   airlock-inspect clone <https-url>   node: clone into /workspace
+#   airlock-inspect download            node: fetch dependencies without running their code
+#   airlock-inspect decoys              node: plant decoy credentials
+#   airlock-inspect seal                root: start the record (after the network closed)
+#   airlock-inspect run                 node: run $AIRLOCK_RUN (or what `download` chose)
+#   airlock-inspect tree                node: install scripts and repository changes
+#   airlock-inspect report              root: reads of decoys, connections, files, processes
+#   airlock-inspect reads               root: only the reads of decoys (cheap, for a running task)
+#
+# Package managers also run code from a repository's own config (.npmrc, .pnpmfile.cjs,
+# .yarnrc.yml, .cargo/config.toml, local paths in requirements.txt). So downloads happen in a
+# clean folder holding only manifests and lockfiles, and the results are moved in afterwards.
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+set -u
+WS=/workspace
+STATE=/home/node/.cache/airlock-inspect
+STAMP=/run/airlock/inspect-stamp
+# A coding task leaves out the ones its own tools read (git reads ~/.netrc, gh its hosts file).
+DECOYS=${AIRLOCK_DECOYS:-".ssh/id_rsa .ssh/id_ed25519 .aws/credentials .npmrc .pypirc .netrc .git-credentials .docker/config.json .config/gh/hosts.yml .kube/config"}
+
+node_download() {
+    clean=$STATE/npm
+    rm -rf "$clean" && mkdir -p "$clean"
+    cp package.json "$clean/"
+    for lock in package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock; do
+        [ -f "$lock" ] && [ ! -L "$lock" ] && cp "$lock" "$clean/"
+    done
+    # Environment settings win over any config a copied file could still name.
+    export npm_config_ignore_scripts=true npm_config_registry=https://registry.npmjs.org/ npm_config_git=/usr/bin/git \
+        npm_config_script_shell=/bin/sh npm_config_userconfig=/dev/null COREPACK_ENABLE_DOWNLOAD_PROMPT=0 YARN_ENABLE_SCRIPTS=false
+    (
+        cd "$clean" || exit 1
+        if [ -f pnpm-lock.yaml ]; then
+            echo "step: pnpm install --ignore-scripts --ignore-pnpmfile"
+            corepack pnpm install --ignore-scripts --ignore-pnpmfile --frozen-lockfile --config.node-linker=hoisted
+        elif [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+            echo "step: npm ci --ignore-scripts"
+            npm ci --ignore-scripts --no-audit --no-fund
+        else
+            # Yarn's own config can run code from the repository; npm reads the same manifest.
+            echo "step: npm install --ignore-scripts"
+            npm install --ignore-scripts --no-audit --no-fund
+        fi
+    ) || return 1
+    # Copied in, not moved: in a worktree task node_modules is a volume of its own.
+    mkdir -p "$WS/node_modules"
+    find "$WS/node_modules" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    cp -a "$clean/node_modules/." "$WS/node_modules/"
+    rm -rf "$clean/node_modules"
+    echo "npm rebuild --foreground-scripts" >> "$STATE/run"
+    # The project's own lifecycle scripts run too, as `npm install` would.
+    for s in preinstall install postinstall prepare; do echo "npm run --if-present $s" >> "$STATE/run"; done
+}
+
+pip_download() {
+    req=$1
+    # Only plain package requirements: options, URLs and local paths are left out (pip would build them).
+    grep -E '^[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?[[:space:]]*([<>=!~]=?[^;#@/]*)?[[:space:]]*(;[^#@/]*)?([[:space:]]*#.*)?$' "$req" > "$STATE/$req.clean"
+    skipped=$(grep -cvE '^[[:space:]]*(#.*)?$' "$req" 2>/dev/null)
+    kept=$(grep -c . "$STATE/$req.clean")
+    echo "step: pip download $req (wheels only; $kept of $skipped lines are plain packages)"
+    (cd "$STATE" && python3 -m pip download --quiet --isolated --only-binary=:all: -r "$STATE/$req.clean" -d "$STATE/wheels") || return 1
+    echo "python3 -m venv .venv && .venv/bin/pip install --isolated --no-index --find-links $STATE/wheels -r $STATE/$req.clean" >> "$STATE/run"
+}
+
+cargo_download() {
+    clean=$STATE/cargo
+    rm -rf "$clean" && mkdir -p "$clean"
+    # The workspace without its .cargo folders (registry overrides, credential helpers).
+    tar -C "$WS" --exclude=.cargo --exclude=.git --exclude=node_modules --exclude=target -cf - . | tar -C "$clean" -xf -
+    echo "step: cargo fetch"
+    (cd "$clean" && CARGO_NET_GIT_FETCH_WITH_CLI=false cargo fetch) || return 1
+    echo "cargo build --offline" >> "$STATE/run"
+}
+
+case "${1:-}" in
+clone)
+    url=${2:-}
+    case "$url" in https://*) ;; *) echo "airlock-inspect: only https URLs" >&2; exit 2 ;; esac
+    # No hooks, no submodules, no LFS: just the files.
+    exec git -c core.hooksPath=/dev/null -c filter.lfs.smudge= -c filter.lfs.process= -c filter.lfs.required=false \
+        clone --quiet --no-recurse-submodules -- "$url" "$WS"
+    ;;
+
+download)
+    cd "$WS" || exit 1
+    mkdir -p "$STATE"
+    : > "$STATE/run"
+    status=0
+    # What setup installs is never part of the work: keep it off the task's branch, even
+    # in a repository without a .gitignore for it.
+    if [ -d .git ] && [ ! -L .git ]; then
+        mkdir -p .git/info
+        for folder in node_modules/ .venv/; do
+            grep -qxF "$folder" .git/info/exclude 2>/dev/null || echo "$folder" >> .git/info/exclude
+        done
+    fi
+    if [ -f package.json ] && [ ! -L package.json ]; then node_download || status=1; fi
+    for req in requirements.txt requirements-dev.txt; do
+        [ -f "$req" ] && [ ! -L "$req" ] && { pip_download "$req" || status=1; }
+    done
+    if [ -f Cargo.toml ] && [ ! -L Cargo.toml ]; then cargo_download || status=1; fi
+    [ -s "$STATE/run" ] || echo "step: nothing to download (no package.json, requirements.txt or Cargo.toml)"
+    exit "$status"
+    ;;
+
+decoys)
+    # Where credential stealers look. Access time before change time, so the first read
+    # moves it forward (relatime) and shows up in the report.
+    for f in $DECOYS; do
+        path=/home/node/$f
+        mkdir -p "$(dirname "$path")"
+        rm -f "$path"
+        printf 'AIRLOCK DECOY: not a real credential. Reading this file is recorded.\n' > "$path"
+        chmod 600 "$path"
+        touch -m -d '2001-01-01 00:00:00' "$path"
+        touch -a -d '2000-01-01 00:00:00' "$path"
+    done
+    ;;
+
+seal)
+    nft flush set inet airlock_audit tried4 2>/dev/null
+    nft flush set inet airlock_audit tried6 2>/dev/null
+    sleep 1
+    touch "$STAMP"
+    ;;
+
+run)
+    cd "$WS" || exit 1
+    # npm itself reads ~/.npmrc (a decoy) on every run; only code that goes looking should.
+    export npm_config_userconfig=/dev/null
+    command=${AIRLOCK_RUN:-}
+    [ -n "$command" ] || command=$(paste -sd';' "$STATE/run" 2>/dev/null)
+    [ -n "$command" ] || { echo "airlock-inspect: nothing to run"; exit 0; }
+    echo "run: $command"
+    timeout --kill-after=10 "${AIRLOCK_RUN_TIMEOUT:-900}" sh -c "$command"
+    ;;
+
+tree)
+    if [ -d "$WS/node_modules" ]; then
+        /opt/airlock-node/bin/node -e '
+          const fs = require("fs"), path = require("path");
+          const seen = new Set();
+          function scan(dir, depth) {
+            let names = [];
+            try { names = fs.readdirSync(dir); } catch (_) { return; }
+            for (const name of names) {
+              const p = path.join(dir, name);
+              if (name.startsWith("@") && depth < 3) { scan(p, depth + 1); continue; }
+              try {
+                if (fs.lstatSync(p).isSymbolicLink()) continue;
+                const pkg = JSON.parse(fs.readFileSync(path.join(p, "package.json"), "utf8"));
+                const s = pkg.scripts || {};
+                const hooks = ["preinstall", "install", "postinstall"].filter((k) => s[k]);
+                if (hooks.length && !seen.has(pkg.name)) { seen.add(pkg.name); console.log("script " + pkg.name + " (" + hooks.join(", ") + ")"); }
+              } catch (_) {}
+              if (depth < 6) scan(path.join(p, "node_modules"), depth + 1);
+            }
+          }
+          scan(process.argv[1], 0);' "$WS/node_modules" | head -200
+    fi
+    if [ -d "$WS/.git" ]; then
+        /usr/bin/git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$WS" status --porcelain --untracked-files=all 2>/dev/null \
+            | grep -v -E '(^| )(node_modules|\.venv|target)/' | head -200 | sed 's/^.. /repo /'
+    fi
+    ;;
+
+reads|report)
+    [ -f "$STAMP" ] || { echo "airlock-inspect: not sealed" >&2; exit 2; }
+    stamp=$(stat -c %Y "$STAMP")
+    for f in $DECOYS; do
+        path=/home/node/$f
+        if [ ! -e "$path" ] && [ ! -L "$path" ]; then echo "read ~/$f (deleted)"; continue; fi
+        [ "$(stat -c %X "$path")" -ge "$stamp" ] && echo "read ~/$f"
+    done
+    [ "$1" = reads ] && exit 0
+    nft -j list set inet airlock_audit tried4 2>/dev/null | jq -r '.nftables[]?.set.elem[]?.concat? // empty | "tried \(.[0]):\(.[1])"' 2>/dev/null
+    nft -j list set inet airlock_audit tried6 2>/dev/null | jq -r '.nftables[]?.set.elem[]?.concat? // empty | "tried [\(.[0])]:\(.[1])"' 2>/dev/null
+    find / -xdev \( -path /proc -o -path /sys -o -path /dev -o -path /run -o -path /workspace -o -path /home/node/.cache \
+        -o -path /home/node/.npm -o -path /home/node/.cargo -o -path /tmp/node-compile-cache \) -prune \
+        -o -newer "$STAMP" \( -type f -o -type l \) -print 2>/dev/null | head -200 | sed 's/^/changed /'
+    ps -eo user=,args= | awk '$1 == "node" && $0 !~ /(sleep infinity|airlock-inspect)/ { $1 = ""; print "process" $0 }' | head -50
+    ;;
+
+*)
+    echo "usage: airlock-inspect clone <url> | download | decoys | seal | run | tree | report | reads" >&2
+    exit 2
+    ;;
+esac
