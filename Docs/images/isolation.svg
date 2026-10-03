@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="960" height="620" role="img" aria-labelledby="t d">
+  <title id="t">How AIrlock isolates a task</title>
+  <desc id="d">Your Mac, the task container and the internet as three zones. The task repository borrows your repository's objects read-only and comes back as a git bundle into work.git; handing off needs your approval. The agent talks to the API through airlock-proxy, which holds the real token. A firewall lets only allowed hosts resolve.</desc>
+  <style>
+    :root {
+      --bg: #ffffff; --text: #1f2328; --sub: #59636e; --line: #6e7781;
+      --box: #ffffff; --box-stroke: #c8ccd2;
+      --mac: #f1f5fd; --mac-stroke: #c3d2ee;
+      --box-in: #fffdf9; --cont: #fdf5ea; --cont-stroke: #e8cfa8;
+      --net: #f5f5f4; --net-stroke: #dcdcd8;
+      --fw: #fbe3d6; --fw-stroke: #d8703a; --fw-text: #9a3412;
+      --deny: #cf222e;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117; --text: #e6edf3; --sub: #9198a1; --line: #8b949e;
+        --box: #0d1117; --box-stroke: #3d444d;
+        --mac: #111a2b; --mac-stroke: #2c3d5e;
+        --box-in: #120e08; --cont: #211a10; --cont-stroke: #5a4325;
+        --net: #161b22; --net-stroke: #30363d;
+        --fw: #3b1d12; --fw-stroke: #d8703a; --fw-text: #f0a170;
+        --deny: #f85149;
+      }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--text); }
+    .zone-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; fill: var(--sub); }
+    .h { font-size: 13px; font-weight: 600; }
+    .s { font-size: 11px; fill: var(--sub); }
+    .lbl { font-size: 11px; fill: var(--sub); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .bg { fill: var(--bg); }
+    .mac { fill: var(--mac); stroke: var(--mac-stroke); }
+    .cont { fill: var(--cont); stroke: var(--cont-stroke); }
+    .net { fill: var(--net); stroke: var(--net-stroke); }
+    .box { fill: var(--box); stroke: var(--box-stroke); }
+    .box-in { fill: var(--box-in); stroke: var(--cont-stroke); }
+    .deny-box { fill: var(--box); stroke: var(--deny); stroke-dasharray: 4 3; }
+    .fw { fill: var(--fw); stroke: var(--fw-stroke); }
+    .fw-text { font-size: 11px; font-weight: 600; fill: var(--fw-text); letter-spacing: .03em; }
+    .arrow { fill: none; stroke: var(--line); stroke-width: 1.5; }
+    .head { fill: var(--line); }
+    .deny { fill: none; stroke: var(--deny); stroke-width: 1.5; }
+    .faint { fill: none; stroke: var(--deny); stroke-width: 1.2; stroke-dasharray: 3 4; opacity: .6; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="960" height="620" rx="12"/>
+
+  <!-- Zones -->
+  <rect class="mac" x="16" y="16" width="296" height="588" rx="10"/>
+  <text class="zone-label" x="32" y="42">YOUR MAC · TRUSTED</text>
+  <rect class="cont" x="344" y="16" width="392" height="588" rx="10"/>
+  <text class="zone-label" x="360" y="42">TASK CONTAINER · UNTRUSTED</text>
+  <rect class="net" x="760" y="16" width="184" height="588" rx="10"/>
+  <text class="zone-label" x="776" y="42">INTERNET</text>
+
+  <!-- Firewall at the container's edge -->
+  <rect class="fw" x="696" y="64" width="28" height="524" rx="6"/>
+  <text class="fw-text" transform="translate(714 404) rotate(-90)" text-anchor="middle">FIREWALL</text>
+  <text class="fw-text" transform="translate(714 520) rotate(-90)" text-anchor="middle">nftables · dnsmasq</text>
+  <text class="fw-text" transform="translate(714 142) rotate(-90)" text-anchor="middle">allowlist only</text>
+
+  <!-- Row 1: repositories -->
+  <rect class="box" x="36" y="72" width="256" height="72" rx="8"/>
+  <text class="h" x="48" y="96">Your repository</text>
+  <text class="s" x="48" y="114">your branches and objects</text>
+  <text class="s" x="48" y="130">the agent can't move or write them</text>
+
+  <rect class="box-in" x="364" y="72" width="312" height="72" rx="8"/>
+  <text class="h" x="376" y="96">Task repository</text>
+  <text class="s" x="376" y="114">own refs, index, config and hooks</text>
+  <text class="s" x="376" y="130">on a volume; git runs only in here</text>
+
+  <path class="arrow" d="M292,108 H362" marker-end="url(#a)"/>
+  <text class="lbl" x="328" y="100" text-anchor="middle">objects</text>
+  <text class="lbl" x="328" y="126" text-anchor="middle">read-only</text>
+
+  <!-- Row 2: work.git and handoff -->
+  <rect class="box" x="36" y="184" width="256" height="72" rx="8"/>
+  <text class="h mono" x="48" y="208">work.git</text>
+  <text class="s" x="48" y="226">AIrlock's copy of the task branch</text>
+  <text class="s" x="48" y="242">updated after every turn</text>
+
+  <path class="arrow" d="M400,144 V220 H294" marker-end="url(#a)"/>
+  <text class="lbl" x="346" y="212" text-anchor="middle">git bundle</text>
+  <text class="lbl" x="346" y="236" text-anchor="middle">every turn</text>
+
+  <path class="arrow" d="M110,184 V146" marker-end="url(#a)"/>
+  <text class="lbl" x="122" y="168">hand off, after you approve</text>
+
+  <!-- Row 3: app and agent -->
+  <rect class="box" x="36" y="296" width="256" height="88" rx="8"/>
+  <text class="h" x="48" y="320">AIrlock app</text>
+  <text class="s" x="48" y="338">settings come from your repo only</text>
+  <text class="s" x="48" y="354">you approve new hosts and ports</text>
+  <text class="s" x="48" y="370">agent files read without following links</text>
+
+  <rect class="box-in" x="364" y="296" width="312" height="88" rx="8"/>
+  <text class="h" x="376" y="320">Agent: Claude Code in tmux</text>
+  <text class="s" x="376" y="338">runs without permission prompts</text>
+  <text class="s" x="376" y="354">user node · no capabilities</text>
+  <text class="s" x="376" y="370">no-new-privileges</text>
+
+  <path class="arrow" d="M364,340 H294" marker-end="url(#a)"/>
+  <text class="lbl" x="328" y="332" text-anchor="middle">hook events</text>
+
+  <path class="arrow" d="M520,296 V146" marker-end="url(#a)"/>
+  <text class="lbl" x="530" y="226">edits, commits</text>
+
+  <!-- Row 4: token and proxy -->
+  <rect class="box" x="36" y="424" width="256" height="72" rx="8"/>
+  <text class="h" x="48" y="448">Keychain</text>
+  <text class="s" x="48" y="466">your Claude token</text>
+  <text class="s" x="48" y="482">never handed to the agent</text>
+
+  <rect class="box-in" x="364" y="424" width="312" height="72" rx="8"/>
+  <text class="h mono" x="376" y="448">airlock-proxy</text>
+  <text class="s" x="376" y="466">its own user, on 127.0.0.1:8119</text>
+  <text class="s" x="376" y="482">swaps the placeholder for the real token</text>
+
+  <path class="arrow" d="M292,460 H362" marker-end="url(#a)"/>
+  <text class="lbl" x="328" y="452" text-anchor="middle">token</text>
+  <text class="lbl" x="328" y="478" text-anchor="middle">proxy-only</text>
+
+  <path class="arrow" d="M520,384 V422" marker-end="url(#a)"/>
+  <text class="lbl" x="530" y="408">placeholder key</text>
+
+  <!-- Row 5: ports and services -->
+  <rect class="box" x="36" y="528" width="256" height="56" rx="8"/>
+  <text class="h" x="48" y="552">localhost</text>
+  <text class="s" x="48" y="570">only the ports you expose</text>
+
+  <rect class="box-in" x="364" y="528" width="312" height="56" rx="8"/>
+  <text class="h" x="376" y="552">Compose services</text>
+  <text class="s" x="376" y="570">share the agent's network, publish nothing</text>
+
+  <path class="arrow" d="M292,556 H362" marker-end="url(#a)"/>
+  <text class="lbl" x="328" y="548" text-anchor="middle">forward</text>
+
+  <!-- Internet -->
+  <rect class="deny-box" x="776" y="184" width="152" height="72" rx="8"/>
+  <text class="h" x="788" y="208">Other hosts</text>
+  <text class="s" x="788" y="226">no DNS answer;</text>
+  <text class="s" x="788" y="242">listed as blocked</text>
+
+  <rect class="box" x="776" y="312" width="152" height="72" rx="8"/>
+  <text class="h" x="788" y="336">Allowed hosts</text>
+  <text class="s" x="788" y="354">registries and</text>
+  <text class="s" x="788" y="370">hosts you allow</text>
+
+  <rect class="box" x="776" y="424" width="152" height="72" rx="8"/>
+  <text class="h" x="788" y="448">api.anthropic.com</text>
+  <text class="s" x="788" y="466">only the proxy's</text>
+  <text class="s" x="788" y="482">user may connect</text>
+
+  <!-- Traffic through the firewall -->
+  <path class="deny" d="M676,316 H686 V220 H703"/>
+  <path class="deny" d="M704,214 L716,226 M716,214 L704,226" stroke-width="2.5"/>
+  <path class="faint" d="M726,220 H774"/>
+  <path class="arrow" d="M676,348 H774" marker-end="url(#a)"/>
+  <path class="arrow" d="M676,460 H774" marker-end="url(#a)"/>
+</svg>

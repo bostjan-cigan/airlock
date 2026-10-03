@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 660" width="960" height="660" role="img" aria-labelledby="t d">
+  <title id="t">AIrlock architecture</title>
+  <desc id="d">The Claude Code plugin (skill, AIrlock --mcp and AIrlock --watch) talks to the running app over a user-only control socket. Inside the app, AirlockUI and AirlockControl sit on AirlockEngine, which uses AirlockWorkspace, AirlockProviders and the AirlockRuntime protocol, implemented by AirlockDocker and AirlockApple. AirlockCore holds models and the task store. The runtimes drive Docker Engine or Apple Containerization; task state lives in per-task folders.</desc>
+  <style>
+    :root {
+      --bg: #ffffff; --text: #1f2328; --sub: #59636e; --line: #6e7781;
+      --box: #ffffff; --box-stroke: #c8ccd2;
+      --z1: #f4f0fb; --z1-stroke: #d6cbec;
+      --z2: #f1f5fd; --z2-stroke: #c3d2ee;
+      --z3: #f5f5f4; --z3-stroke: #dcdcd8;
+      --accent: #eaf1fd; --accent-stroke: #8fb0e6;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117; --text: #e6edf3; --sub: #9198a1; --line: #8b949e;
+        --box: #0d1117; --box-stroke: #3d444d;
+        --z1: #1a1528; --z1-stroke: #3e3360;
+        --z2: #111a2b; --z2-stroke: #2c3d5e;
+        --z3: #161b22; --z3-stroke: #30363d;
+        --accent: #12233f; --accent-stroke: #3f6aa8;
+      }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--text); }
+    .zone-label { font-size: 11px; font-weight: 700; letter-spacing: .08em; fill: var(--sub); }
+    .h { font-size: 13px; font-weight: 600; }
+    .s { font-size: 11px; fill: var(--sub); }
+    .lbl { font-size: 11px; fill: var(--sub); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .bg { fill: var(--bg); }
+    .z1 { fill: var(--z1); stroke: var(--z1-stroke); }
+    .z2 { fill: var(--z2); stroke: var(--z2-stroke); }
+    .z3 { fill: var(--z3); stroke: var(--z3-stroke); }
+    .box { fill: var(--box); stroke: var(--box-stroke); }
+    .engine { fill: var(--accent); stroke: var(--accent-stroke); }
+    .arrow { fill: none; stroke: var(--line); stroke-width: 1.5; }
+    .head { fill: var(--line); }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="head" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="960" height="660" rx="12"/>
+
+  <!-- Claude Code -->
+  <rect class="z1" x="16" y="16" width="928" height="120" rx="10"/>
+  <text class="zone-label" x="32" y="42">CLAUDE CODE · THE AIRLOCK PLUGIN</text>
+
+  <rect class="box" x="36" y="56" width="180" height="64" rx="8"/>
+  <text class="h" x="48" y="82">Your chat</text>
+  <text class="s" x="48" y="100">describe work, review it</text>
+
+  <rect class="box" x="256" y="56" width="180" height="64" rx="8"/>
+  <text class="h" x="268" y="82">airlock skill</text>
+  <text class="s" x="268" y="100">how to hand off and follow</text>
+
+  <rect class="box" x="476" y="56" width="208" height="64" rx="8"/>
+  <text class="h mono" x="488" y="82">AIrlock --mcp</text>
+  <text class="s" x="488" y="100">the plugin's MCP server (stdio)</text>
+
+  <rect class="box" x="716" y="56" width="208" height="64" rx="8"/>
+  <text class="h mono" x="728" y="82">AIrlock --watch</text>
+  <text class="s" x="728" y="100">progress lines for Monitor</text>
+
+  <path class="arrow" d="M216,88 H254" marker-end="url(#a)"/>
+  <path class="arrow" d="M436,88 H474" marker-end="url(#a)"/>
+
+  <!-- App -->
+  <rect class="z2" x="16" y="176" width="928" height="312" rx="10"/>
+  <text class="zone-label" x="32" y="202">AIRLOCK.APP · PACKAGES/AIRLOCKKIT</text>
+
+  <rect class="box" x="36" y="216" width="428" height="52" rx="8"/>
+  <text class="h" x="48" y="238">AirlockUI</text>
+  <text class="s" x="48" y="256">SwiftUI windows and menu bar, SwiftTerm terminal, approval sheets</text>
+
+  <rect class="box" x="476" y="216" width="448" height="52" rx="8"/>
+  <text class="h" x="488" y="238">AirlockControl</text>
+  <text class="s" x="488" y="256">control socket, MCP tools, approval gate (deny by default)</text>
+
+  <rect class="engine" x="36" y="280" width="888" height="52" rx="8"/>
+  <text class="h" x="48" y="302">AirlockEngine</text>
+  <text class="s" x="48" y="320">TaskEngine: workspace → image → container → agent → activity, then review and handoff</text>
+
+  <rect class="box" x="36" y="344" width="210" height="52" rx="8"/>
+  <text class="h" x="48" y="366">AirlockWorkspace</text>
+  <text class="s" x="48" y="384">clones, worktrees, diffs</text>
+
+  <rect class="box" x="254" y="344" width="210" height="52" rx="8"/>
+  <text class="h" x="266" y="366">AirlockProviders</text>
+  <text class="s" x="266" y="384">Claude Code, image recipes</text>
+
+  <rect class="box" x="476" y="344" width="448" height="52" rx="8"/>
+  <text class="h" x="488" y="366">AirlockRuntime</text>
+  <text class="s" x="488" y="384">ContainerRuntime: one protocol, two runtimes</text>
+
+  <rect class="box" x="36" y="408" width="428" height="52" rx="8"/>
+  <text class="h" x="48" y="430">AirlockCore</text>
+  <text class="s" x="48" y="448">models, task store, activity reducer, Keychain, SafeFile</text>
+
+  <rect class="box" x="476" y="408" width="220" height="52" rx="8"/>
+  <text class="h" x="488" y="430">AirlockDocker</text>
+  <text class="s" x="488" y="448">Docker Engine API client</text>
+
+  <rect class="box" x="704" y="408" width="220" height="52" rx="8"/>
+  <text class="h" x="716" y="430">AirlockApple</text>
+  <text class="s" x="716" y="448">Apple Containerization runtime</text>
+
+  <!-- Runtimes and state -->
+  <rect class="z3" x="16" y="528" width="928" height="116" rx="10"/>
+  <text class="zone-label" x="32" y="554">RUNTIMES AND STATE</text>
+
+  <rect class="box" x="36" y="568" width="428" height="56" rx="8"/>
+  <text class="h" x="48" y="592">Task folders</text>
+  <text class="s mono" x="48" y="610">~/Library/Application Support/AIrlock/tasks/&lt;id&gt;/</text>
+
+  <rect class="box" x="476" y="568" width="220" height="56" rx="8"/>
+  <text class="h" x="488" y="592">Docker Engine</text>
+  <text class="s" x="488" y="610">one container per task</text>
+
+  <rect class="box" x="704" y="568" width="220" height="56" rx="8"/>
+  <text class="h" x="716" y="592">Apple Containerization</text>
+  <text class="s" x="716" y="610">one Linux VM per task</text>
+  <!-- Control socket -->
+  <path class="arrow" d="M580,120 V214" marker-end="url(#a)"/>
+  <path class="arrow" d="M820,120 V214" marker-end="url(#a)"/>
+  <text class="lbl mono" x="700" y="160" text-anchor="middle">control.sock</text>
+  <text class="lbl" x="700" y="176" text-anchor="middle">user-only unix socket</text>
+
+  <!-- Down to the runtimes -->
+  <path class="arrow" d="M250,460 V566" marker-end="url(#a)"/>
+  <text class="lbl" x="260" y="512">task.json, events, transcripts</text>
+  <path class="arrow" d="M586,460 V566" marker-end="url(#a)"/>
+  <text class="lbl" x="596" y="512">HTTP over the socket</text>
+  <path class="arrow" d="M814,460 V566" marker-end="url(#a)"/>
+  <text class="lbl" x="824" y="512">in process</text>
+
+</svg>
