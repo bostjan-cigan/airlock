@@ -17,9 +17,12 @@ all come with tests that pass against the services in their `compose.yaml`.
 | `sample-monorepo` | Node, Python 3.11, Go 1.23 | Stacks found in subfolders (`services/api`, `workers/indexer`) |
 | `sample-airlock-config` | Python 3.13, ffmpeg | `.airlock/compose.yaml`: tools, a Debian package and a size |
 | `sample-ios-notes` | Swift (iOS) | The notice that Apple-platform code can't build in Linux |
+| `sample-node-malicious` | Node | A harmless decoy for `inspect_repo`: install hooks that probe credentials and phone home |
 
 Each sample's README says what AIrlock should detect, gives a prompt, and lists the pass
-criteria.
+criteria. `sample-node-malicious` is the exception: it isn't a notes API, and its README
+lists what an inspection should report instead. Inspect it in AIrlock; don't install it on
+your Mac.
 
 ## Check detection without starting a task
 

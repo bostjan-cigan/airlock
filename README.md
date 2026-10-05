@@ -287,6 +287,38 @@ check whether it's in a sandbox, or act only when it's used. Nothing comes back 
 A pretend runtime with sample projects and tasks in every state. Nothing runs and nothing calls the API: the
 terminals replay canned Claude Code sessions. Your real tasks and settings aren't touched.
 
+## Sample projects
+
+To try a real task on code that's known to work, use one of the samples in
+[`TestProjects/`](TestProjects/README.md). Most are the same small notes API (Postgres for storage, Redis for the
+cache) written in a different stack, with tests that pass against the services in their `compose.yaml`. Each one is
+shaped to exercise one part of how AIrlock sets up a task, and its README gives a prompt and says what should happen.
+
+| Sample | Stack | What it shows |
+| --- | --- | --- |
+| `sample-app-multiple-containers` | Node 22, npm | Compose services (Postgres, Redis) running next to the agent |
+| `sample-python-notes` | Python 3.12 | Version from `.python-version`; the `.venv` stays in the container |
+| `sample-go-notes` | Go 1.22.5 | The `toolchain` line in `go.mod` wins over `go 1.22` |
+| `sample-rust-notes` | Rust 1.90 | `rust-toolchain.toml`; a heavy stack that gets a bigger container |
+| `sample-java-notes` | Java 21, Maven | Java from `pom.xml`; Maven installed because there's no wrapper |
+| `sample-ruby-notes` | Ruby 3.3.6 | `.tool-versions`; a Debian package the agent installs and AIrlock remembers |
+| `sample-php-notes` | PHP 8.2, Composer | PHP from Debian packages; a blocked host you're asked to allow |
+| `sample-node-pnpm` | Node 20, pnpm 9 | `mise.toml` pinning an older Node than the agent image has |
+| `sample-monorepo` | Node, Python, Go | Stacks found in subfolders, each with its own version |
+| `sample-airlock-config` | Python 3.13, ffmpeg | No version files: tools, a package and the size come from `.airlock/compose.yaml` |
+| `sample-ios-notes` | Swift (iOS) | The notice that Apple-platform code can be edited but not built in Linux |
+| `sample-node-malicious` | Node | A harmless decoy for [inspections](#inspecting-an-untrusted-repository): install hooks that probe for credentials and phone home |
+
+A task needs a repository of its own, so copy a sample out of the checkout first:
+
+```bash
+TestProjects/Docker/make-repo.sh sample-python-notes   # → ~/AIrlockSamples/sample-python-notes
+```
+
+Then ask Claude to start a task on `~/AIrlockSamples/sample-python-notes` with services on, using the prompt from the
+sample's README. Inspect `sample-node-malicious` instead of installing it: its hooks are inert, but the point is to see
+them caught in the sealed VM.
+
 ## Troubleshooting
 
 - **A Keychain prompt after updating, or "The user name or passphrase you entered is not correct."** Each version
@@ -364,8 +396,9 @@ The end-to-end check uses a dummy API key: it verifies the container, firewall, 
 events, diffs, bring-back, terminal attach, stop/resume and cleanup, but not a real conversation.
 
 `TestProjects/Docker/` has sample repositories, one per stack (Node, Python, Go, Rust, Java, Ruby, PHP, a monorepo,
-`.airlock` config, iOS), each with a prompt and pass criteria. `TestProjects/Docker/make-repo.sh <sample>` copies one
-into `~/AIrlockSamples` as a standalone repository to run a real task on.
+`.airlock` config, iOS, an inspection decoy), each with a prompt and pass criteria; see
+[Sample projects](#sample-projects). `TestProjects/Docker/make-repo.sh <sample>` copies one into `~/AIrlockSamples`
+as a standalone repository to run a real task on.
 
 ## Building a release
 
@@ -379,8 +412,11 @@ A release build for Apple silicon, signed ad hoc, as `dist/AIrlock-X.Y.Z.dmg` (d
 
 **Publishing:** `.github/workflows/release.yml` runs the unit tests, builds with `Tools/package.sh` and publishes a
 GitHub Release with the `.dmg`, `.zip` and checksums. Start it from **Actions › Release › Run workflow** (pick
-patch, minor or major; the next version comes from the latest `v*` tag), or push a tag such as `v1.2.0`. Versions
-live only in git tags. The Claude Code plugin is versioned separately, in `Plugin/airlock/.claude-plugin/plugin.json`.
+patch, minor or major; the next version comes from the latest `v*` tag), or push a tag such as `v1.2.0`. The
+release's version comes from its tag. Local builds report `MARKETING_VERSION` from the Xcode project (currently
+`0.1.0`) unless `AIRLOCK_VERSION` is set. The first release is `v0.1.0`: push that tag, or run the workflow with
+**minor** while there are no `v*` tags yet. The Claude Code plugin is versioned separately, in
+`Plugin/airlock/.claude-plugin/plugin.json`.
 
 ## How it's built
 
@@ -603,7 +639,7 @@ Packages/AirlockKit/
   airlock-cli                developer tool: smoke tests, detection and the end-to-end checks
 Plugin/airlock/              Claude Code plugin: MCP launcher and the `airlock` skill
 .claude-plugin/              marketplace manifest so the repo installs as a plugin source
-TestProjects/Docker/         sample repositories, one per stack
+TestProjects/                sample repositories, one per stack (see TestProjects/README.md)
 Tools/                       build, package, Apple VM test, icon, GIF and cover scripts
 Config/                      entitlements and signing (your Team ID goes in Signing.local.xcconfig)
 .github/workflows/           the release pipeline
