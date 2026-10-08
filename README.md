@@ -29,7 +29,7 @@ it, and tells you how it's going (tests passing, commits made, a question the ag
 is done, Claude goes through the changes with you. The app itself answers one question: what's running, and does
 anything need me?
 
-**Contents:** [Installation & user guide](#installation--user-guide) · [Development](#development) · [License](#license)
+**Contents:** [Installation & user guide](#installation--user-guide) · [Security and limitations](#security-and-limitations) · [Development](#development) · [License](#license)
 
 ---
 
@@ -318,6 +318,16 @@ TestProjects/Docker/make-repo.sh sample-python-notes   # → ~/AIrlockSamples/sa
 Then ask Claude to start a task on `~/AIrlockSamples/sample-python-notes` with services on, using the prompt from the
 sample's README. Inspect `sample-node-malicious` instead of installing it: its hooks are inert, but the point is to see
 them caught in the sealed VM.
+
+## Security and limitations
+
+AIrlock keeps a hostile agent away from your files, your branches, your Claude credential and hosts you haven't
+allowed. It can't vouch for the code the agent writes: handing off brings that code into your repository, so review
+it as you would a stranger's pull request. Every allowed host can receive data, a task with GitHub access holds your
+GitHub token, and Docker tasks share a Linux kernel (Apple VMs don't).
+
+[SECURITY.md](SECURITY.md) lists what AIrlock defends against, its known limitations and how to report a
+vulnerability privately.
 
 ## Troubleshooting
 
