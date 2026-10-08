@@ -23,10 +23,25 @@ public enum TaskRepository {
         } else {
             try? await git(dir, ["remote", "remove", "origin"])
         }
+        try await inheritExcludes(from: source, into: dir)
         var notes: [String] = []
         if let note = await submodules(in: dir, source: source) { notes.append(note) }
         if let note = await lfs(in: dir, source: source) { notes.append(note) }
         return notes
+    }
+
+    /// Copies the user's `info/exclude` into the task's repository. A clone doesn't carry it,
+    /// so without it `git add -A` in the container would commit what the user keeps out of
+    /// git (a plain folder's `node_modules/`, huge files) and the handoff would bring it back.
+    static func inheritExcludes(from source: URL, into dir: URL) async throws {
+        guard let common = try? await output(source, ["rev-parse", "--path-format=absolute", "--git-common-dir"]),
+              let excludes = SafeFile.read("info/exclude", in: URL(fileURLWithPath: common), limit: 1 << 20), !excludes.isEmpty
+        else { return }
+        let info = dir.appending(path: ".git/info", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: info, withIntermediateDirectories: true)
+        let own = (try? Data(contentsOf: info.appending(path: "exclude"))) ?? Data()
+        try (own + Data("\n# From \(source.lastPathComponent)\n".utf8) + excludes + Data("\n".utf8))
+            .write(to: info.appending(path: "exclude"), options: .atomic)
     }
 
     /// Submodules from the user's own checkouts when they have them (no network), else from

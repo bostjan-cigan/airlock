@@ -44,8 +44,9 @@ enum EndToEndPlainFolder {
         let branch = await engine.task(task.id)!.workspace.branch
         check("folder files and task branch in /workspace", seen.output == "hello\n\(branch)\n", seen.output.replacingOccurrences(of: "\n", with: " "))
 
-        // The agent commits one change and leaves another uncommitted.
-        _ = try await sh("echo agent >> README.md && echo new > NEW.txt && git add -A && git commit -qm 'agent change' && echo left > LEFT.txt")
+        // The agent commits one change and leaves another uncommitted, next to packages and build output.
+        _ = try await sh("echo agent >> README.md && echo new > NEW.txt && git add -A && git commit -qm 'agent change' && echo left > LEFT.txt"
+                         + " && mkdir -p node_modules/x dist && echo dep > node_modules/x/index.js && echo out > dist/app.js")
         // The user edits the folder meanwhile.
         try "mine\n".write(to: folder.appending(path: "notes.txt"), atomically: true, encoding: .utf8)
 
@@ -58,6 +59,8 @@ enum EndToEndPlainFolder {
         check("committed work applied", read("README.md") == "hello\nagent\n" && read("NEW.txt") == "new\n")
         check("uncommitted work applied", read("LEFT.txt") == "left\n")
         check("user's edit kept", read("notes.txt") == "mine\n")
+        check("packages and build output stayed in the task", !FileManager.default.fileExists(atPath: folder.appending(path: "node_modules").path)
+              && !FileManager.default.fileExists(atPath: folder.appending(path: "dist").path))
         check("temporary .git deleted", release == .removed && !FileManager.default.fileExists(atPath: gitDir), "\(String(describing: release))")
         try? FileManager.default.removeItem(at: root)
     }

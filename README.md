@@ -573,7 +573,10 @@ the Mac from idle sleep, and once a day it picks up a newer Claude Code.
 ### Plain folders
 
 A task can work on a folder that isn't a git repository. AIrlock runs `git init` in the folder (on branch
-`airlock-base`, with no template, so no hooks) and commits a snapshot; from then on the task works like any other.
+`airlock-base`, with no template, so no hooks) and commits a snapshot, leaving out dependency folders, build
+output and files over 50 MB through `.git/info/exclude`. Each task's repository gets the same exclude list, so
+packages and builds the agent makes stay out of its commits and never reach the folder. From then on the task works
+like any other.
 **Apply and Remove** commits whatever the agent left uncommitted and merges the task branch into the folder's files
 (your own edits are committed first; a conflict aborts and changes nothing). When the folder's last task is gone,
 AIrlock deletes the `.git` it created, but only one it can prove it created:

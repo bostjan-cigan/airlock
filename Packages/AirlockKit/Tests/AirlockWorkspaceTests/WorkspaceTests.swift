@@ -141,6 +141,28 @@ extension WorktreeProvisioner {
         #expect(try f.read("b.txt") == "bee\n")
     }
 
+    @Test func dependenciesTheAgentInstallsStayInTheTask() async throws {
+        let f = try Fixture()
+        defer { try? FileManager.default.removeItem(at: f.root) }
+        try await PlainFolder.snapshot(f.folder.path, registry: f.registry)
+
+        // The agent installs packages and builds, then commits everything with `git add -A`.
+        let (task, provisioner) = try await f.task("Install") { wt in
+            try FileManager.default.createDirectory(at: wt.appending(path: "node_modules/x"), withIntermediateDirectories: true)
+            try "dep\n".write(to: wt.appending(path: "node_modules/x/index.js"), atomically: true, encoding: .utf8)
+            try FileManager.default.createDirectory(at: wt.appending(path: "dist"), withIntermediateDirectories: true)
+            try "out\n".write(to: wt.appending(path: "dist/app.js"), atomically: true, encoding: .utf8)
+            try "bee\n".write(to: wt.appending(path: "b.txt"), atomically: true, encoding: .utf8)
+        }
+        #expect(try await HostGit(f.folder).run("ls-tree", "-r", "--name-only", task.workspace.branch) == "a.txt\nb.txt")
+
+        try await PlainFolder.apply(f.folder.path, branch: task.workspace.branch, title: task.title, registry: f.registry)
+        #expect(try f.read("b.txt") == "bee\n")
+        #expect(!FileManager.default.fileExists(atPath: f.folder.appending(path: "node_modules").path))
+        #expect(!FileManager.default.fileExists(atPath: f.folder.appending(path: "dist").path))
+        try await provisioner.cleanup(task)
+    }
+
     @Test func conflictLeavesFolderUntouched() async throws {
         let f = try Fixture()
         defer { try? FileManager.default.removeItem(at: f.root) }
