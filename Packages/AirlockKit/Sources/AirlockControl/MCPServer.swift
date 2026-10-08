@@ -80,7 +80,7 @@ public final class MCPServer: @unchecked Sendable {
             reply(id, result: [
                 "protocolVersion": requested,
                 "capabilities": ["tools": [String: Any]()],
-                "serverInfo": ["name": "airlock", "version": "0.2"],
+                "serverInfo": ["name": "airlock", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"],
                 "instructions": Self.instructions,
             ])
         case "ping":
