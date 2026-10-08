@@ -1,0 +1,43 @@
+# Runs the unit tests and builds the app on every push to main and every pull request.
+# The end-to-end checks need Docker or Apple VMs, which GitHub's macOS runners don't offer;
+# run those locally (see Tests in the README).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# A newer push to the same branch or pull request replaces the run in progress.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test
+        working-directory: Packages/AirlockKit
+        run: swift test
+
+      - name: Build the app
+        run: ADHOC=1 Tools/build.sh
+
+      - name: Check the plugin
+        run: |
+          jq empty .claude-plugin/marketplace.json Plugin/airlock/.claude-plugin/plugin.json
+          sh -n Plugin/airlock/bin/airlock-mcp
+
+      - name: Keep the build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: build/xcodebuild.log
+          if-no-files-found: ignore

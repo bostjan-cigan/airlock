@@ -17,6 +17,10 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/bostjan-cigan/airlock/actions/workflows/ci.yml"><img src="https://github.com/bostjan-cigan/airlock/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
+
+<p align="center">
   <img src="Docs/images/live-terminal.gif" width="820" alt="An agent pen-testing OAuth endpoints in its own container, with its results arriving in the terminal">
 </p>
 
@@ -401,6 +405,9 @@ swift run airlock-cli e2e-services /tmp              # compose services and port
 swift run airlock-cli detect ../../TestProjects/Docker/*/   # what detection finds per sample
 Tools/test-apple.sh worktree restricted              # the same check on Apple VMs (signs the CLI)
 ```
+
+CI (`.github/workflows/ci.yml`) runs the unit tests, builds the app and checks the plugin on every push to `main`
+and every pull request. The end-to-end checks need Docker or Apple VMs, so they run locally.
 
 The end-to-end check uses a dummy API key: it verifies the container, firewall, git, tmux agent session, hook
 events, diffs, bring-back, terminal attach, stop/resume and cleanup, but not a real conversation.
